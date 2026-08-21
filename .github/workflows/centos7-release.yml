@@ -2,17 +2,6 @@ name: 'CentOS 7 Release'
 
 on:
   workflow_dispatch:
-    inputs:
-      source_repository:
-        description: 'JBR source repository'
-        required: true
-        default: 'JetBrains/JetBrainsRuntime'
-        type: string
-      source_ref:
-        description: 'JBR branch, tag, or commit to build'
-        required: true
-        default: 'jbr25'
-        type: string
 
 permissions:
   contents: write
@@ -28,8 +17,7 @@ jobs:
       - name: 'Checkout JBR source'
         uses: actions/checkout@v6
         with:
-          repository: ${{ inputs.source_repository }}
-          ref: ${{ inputs.source_ref }}
+          ref: jbr25
           fetch-depth: 0
 
       - name: 'Get the BootJDK'
@@ -225,8 +213,8 @@ jobs:
           cat > release-notes.md <<EOF
           Custom JetBrains Runtime build for CentOS 7 / glibc 2.17.
 
-          Source repository: ${{ inputs.source_repository }}
-          Source ref: ${{ inputs.source_ref }}
+          Source repository: ${{ github.repository }}
+          Source ref: jbr25
           Source SHA: ${source_sha}
           JBR version: ${version}
           Custom build number: ${BUILD_NUMBER}
@@ -253,6 +241,7 @@ jobs:
           SDK_TGZ: ${{ steps.bundles.outputs.sdk }}
           TAG: ${{ steps.release.outputs.tag }}
           TITLE: ${{ steps.release.outputs.title }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
         run: |
           set -euxo pipefail
 
@@ -261,7 +250,7 @@ jobs:
             "$SDK_TGZ" \
             SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --target "$SOURCE_SHA" \
             --title "$TITLE" \
             --notes-file release-notes.md \
             --prerelease
@@ -274,7 +263,7 @@ jobs:
             echo '### CentOS 7 JBR release created'
             echo
             echo "- Tag: \`$TAG\`"
-            echo "- Source: \`${{ inputs.source_repository }}@${{ inputs.source_ref }}\`"
+            echo "- Source: \`${{ github.repository }}@jbr25\`"
             echo "- Source SHA: \`${{ steps.release.outputs.source_sha }}\`"
             echo '- Release workflow rebuilt and revalidated the binaries independently.'
           } >> "$GITHUB_STEP_SUMMARY"
