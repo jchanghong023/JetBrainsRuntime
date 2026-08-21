@@ -2,17 +2,6 @@ name: 'CentOS 7 Verify'
 
 on:
   workflow_dispatch:
-    inputs:
-      source_repository:
-        description: 'JBR source repository'
-        required: true
-        default: 'JetBrains/JetBrainsRuntime'
-        type: string
-      source_ref:
-        description: 'JBR branch, tag, or commit to build'
-        required: true
-        default: 'jbr25'
-        type: string
 
 permissions:
   contents: read
@@ -27,8 +16,7 @@ jobs:
       - name: 'Checkout JBR source'
         uses: actions/checkout@v6
         with:
-          repository: ${{ inputs.source_repository }}
-          ref: ${{ inputs.source_ref }}
+          ref: jbr25
           fetch-depth: 0
 
       - name: 'Get the BootJDK'
@@ -212,7 +200,7 @@ jobs:
           {
             echo '### CentOS 7 JBR verification passed'
             echo
-            echo "- Source: \`${{ inputs.source_repository }}@${{ inputs.source_ref }}\`"
+            echo "- Source: \`${{ github.repository }}@jbr25\`"
             echo "- Source SHA: \`$(git rev-parse HEAD)\`"
             echo "- Runtime: \`$(basename "$RUNTIME_TGZ")\`"
             echo "- SDK: \`$(basename "$SDK_TGZ")\`"
