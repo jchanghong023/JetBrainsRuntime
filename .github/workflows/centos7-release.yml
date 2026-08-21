@@ -77,11 +77,12 @@ jobs:
               fi
 
               echo "Build libc:"
-              ldd --version | head -n 1
-              ldd --version | head -n 1 | grep -F "2.17"
+              glibc_line="$(ldd --version 2>&1 | sed -n "1p")"
+              echo "$glibc_line"
+              grep -F "2.17" <<< "$glibc_line"
 
               echo "Compiler:"
-              gcc --version | head -n 1
+              gcc --version | sed -n "1p"
 
               echo "Boot JDK:"
               "$BOOT_JDK/bin/java" -version
@@ -181,7 +182,7 @@ jobs:
           docker pull quay.io/centos/centos:7
 
           docker run --rm quay.io/centos/centos:7 \
-            bash -lc 'ldd --version | head -n 1 | grep -F "2.17"'
+            bash -lc 'glibc_line="$(ldd --version 2>&1 | sed -n "1p")"; echo "$glibc_line"; grep -F "2.17" <<< "$glibc_line"'
 
           docker run --rm \
             -v "$runtime_dir:/opt/jbr:ro" \
