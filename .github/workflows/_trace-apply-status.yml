@@ -1,0 +1,36 @@
+name: 'Trace Shader Compiler Fix Status'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/_trace-apply-status.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  trace:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 'Record apply workflow status'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow _apply-centos7-shader-compiler.yml \
+            --limit 5 \
+            --json databaseId,status,conclusion,headSha,event,createdAt \
+            --jq '.')"
+          payload="$(printf '%s\n' "$status" | base64 -w0)"
+          gh api \
+            --method PUT \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/contents/.github/apply-centos7-status.json" \
+            -f message='ci: record shader compiler fix workflow status' \
+            -f content="$payload" \
+            -f branch='main'
