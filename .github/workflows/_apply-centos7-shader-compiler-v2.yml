@@ -1,0 +1,33 @@
+name: 'Apply CentOS 7 Shader Compiler Fix v2'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/_apply-centos7-shader-compiler-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 'Apply patch'
+        run: |
+          set -euxo pipefail
+          python3 .github/patch-centos7-shader.py
+          rm .github/patch-centos7-shader.py
+          rm .github/workflows/_apply-centos7-shader-compiler-v2.yml
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'ci: build glslangValidator for CentOS 7 JBR'
+          git push origin HEAD:main
