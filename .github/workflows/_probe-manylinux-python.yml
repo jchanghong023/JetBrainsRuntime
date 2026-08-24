@@ -1,0 +1,48 @@
+name: 'Probe manylinux Python 3 Layout'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/_probe-manylinux-python.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 'Probe Python executables'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          docker pull quay.io/pypa/manylinux2014_x86_64:latest
+          result="$(docker run --rm quay.io/pypa/manylinux2014_x86_64:latest bash -s <<'EOS'
+          set -euo pipefail
+          echo 'Matches:'
+          find /opt/python -path "*/bin/python*" -print | sort
+          echo 'Selected:'
+          selected=
+          while IFS= read -r candidate; do
+            if [[ -x "$candidate" ]] && "$candidate" -c "import sys; raise SystemExit(sys.version_info[0] != 3)" >/dev/null 2>&1; then
+              selected="$candidate"
+              break
+            fi
+          done < <(find /opt/python -path "*/bin/python*" -print | sort)
+          test -n "$selected"
+          printf '%s ' "$selected"
+          "$selected" --version 2>&1
+          EOS
+          )"
+          printf '%s\n' "$result"
+          payload="$(printf '%s\n' "$result" | base64 -w0)"
+          gh api \
+            --method PUT \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/contents/.github/manylinux-python-probe.txt" \
+            -f message='ci: record manylinux Python probe' \
+            -f content="$payload" \
+            -f branch='main'
