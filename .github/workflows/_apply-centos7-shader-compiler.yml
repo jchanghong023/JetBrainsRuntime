@@ -1,0 +1,108 @@
+name: 'Apply CentOS 7 Shader Compiler Fix'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/_apply-centos7-shader-compiler.yml'
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  apply-dispatch-record:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 'Checkout main'
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 'Patch verify and release workflows'
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path('.github/workflows/centos7-verify.yml'),
+              Path('.github/workflows/centos7-release.yml'),
+          ]
+          anchor = '              echo "Build libc:"\n'
+          block = '''              GLSLANG_VERSION=11.13.0
+              GLSLANG_COMMIT=77551c429f86c0e077f26552b7c1c0f12a9f235e
+              rm -rf /tmp/glslang /tmp/glslang-build
+              git clone --depth 1 --branch "$GLSLANG_VERSION" https://github.com/KhronosGroup/glslang.git /tmp/glslang
+              test "$(git -C /tmp/glslang rev-parse HEAD)" = "$GLSLANG_COMMIT"
+              cmake -S /tmp/glslang -B /tmp/glslang-build \\
+                -DCMAKE_BUILD_TYPE=Release \\
+                -DENABLE_OPT=OFF \\
+                -DBUILD_TESTING=OFF \\
+                -DENABLE_HLSL=OFF \\
+                -DINSTALL_GTEST=OFF
+              cmake --build /tmp/glslang-build --target glslangValidator --parallel 2
+              install -m 0755 /tmp/glslang-build/StandAlone/glslangValidator /usr/local/bin/glslangValidator
+              glslangValidator --version
+              printf "%s\\n" "#version 450" "layout(local_size_x = 1) in;" "void main() {}" > /tmp/jbr-vulkan-smoke.comp
+              glslangValidator --target-env vulkan1.2 -x -DSTAGE_COMP -o /tmp/jbr-vulkan-smoke.h /tmp/jbr-vulkan-smoke.comp
+              test -s /tmp/jbr-vulkan-smoke.h
+
+'''
+
+          for path in paths:
+              text = path.read_text()
+              if 'GLSLANG_COMMIT=77551c429f86c0e077f26552b7c1c0f12a9f235e' in text:
+                  raise SystemExit(f'{path}: shader compiler block already present')
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'{path}: expected exactly one insertion anchor')
+              path.write_text(text.replace(anchor, block + anchor, 1))
+          PY
+
+          rm .github/workflows/_apply-centos7-shader-compiler.yml
+
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .github/workflows/centos7-verify.yml .github/workflows/centos7-release.yml .github/workflows/_apply-centos7-shader-compiler.yml
+          git diff --cached --check
+          git diff --cached -- .github/workflows/centos7-verify.yml .github/workflows/centos7-release.yml
+          git commit -m 'ci: build glslangValidator for CentOS 7 JBR'
+          git push origin HEAD:main
+
+      - name: 'Dispatch verify and record run id'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          patch_sha="$(git rev-parse HEAD)"
+          gh workflow run centos7-verify.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow centos7-verify.yml \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"$patch_sha\") | .databaseId" \
+              | head -n 1)"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            sleep 2
+          done
+
+          test -n "$run_id"
+          payload="$(printf '%s\n' "$run_id" | base64 -w0)"
+          gh api \
+            --method PUT \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/contents/.github/last-centos7-verify-run" \
+            -f message='ci: record CentOS 7 verify run id' \
+            -f content="$payload" \
+            -f branch='main'
