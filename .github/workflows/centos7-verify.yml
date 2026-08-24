@@ -31,7 +31,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y binutils file
 
-      - name: 'Build JBR Legacy Binary on glibc 2.17'
+      - name: 'Build JBR without JCEF on glibc 2.17'
         env:
           BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
         run: |
@@ -105,7 +105,7 @@ jobs:
               echo "Boot JDK:"
               "$BOOT_JDK/bin/java" -version
 
-              bash jb/project/tools/linux/scripts/mkimages_x64.sh "$BUILD_NUMBER" lb
+              bash jb/project/tools/linux/scripts/mkimages_x64.sh "$BUILD_NUMBER" nomod
             '
 
       - name: 'Locate JBR bundles'
@@ -115,8 +115,8 @@ jobs:
         run: |
           set -euxo pipefail
 
-          runtime="$(find . -maxdepth 1 -type f -name "jbr_lb-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
-          sdk="$(find . -maxdepth 1 -type f -name "jbrsdk_lb-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
+          runtime="$(find . -maxdepth 1 -type f -name "jbr-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
+          sdk="$(find . -maxdepth 1 -type f -name "jbrsdk-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
 
           test -n "$runtime"
           test -n "$sdk"
@@ -194,7 +194,7 @@ jobs:
           rm -rf centos7-smoke
           mkdir -p centos7-smoke
           tar -xzf "$RUNTIME_TGZ" -C centos7-smoke
-          runtime_dir="$(find "$PWD/centos7-smoke" -mindepth 1 -maxdepth 1 -type d -name 'jbr_lb-*' -print -quit)"
+          runtime_dir="$(find "$PWD/centos7-smoke" -mindepth 1 -maxdepth 1 -type d -name 'jbr-*' -print -quit)"
           test -n "$runtime_dir"
 
           docker pull quay.io/centos/centos:7
