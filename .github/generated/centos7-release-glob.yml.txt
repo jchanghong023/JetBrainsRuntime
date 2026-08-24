@@ -1,0 +1,322 @@
+name: 'CentOS 7 Release'
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-verify-release:
+    name: 'Build, verify, and release JBR for CentOS 7'
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: 'Checkout JBR source'
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 'Get the BootJDK'
+        id: bootjdk
+        uses: ./.github/actions/get-bootjdk
+        with:
+          platform: linux-x64
+
+      - name: 'Install host verification tools'
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y binutils file
+
+      - name: 'Build JBR without JCEF on glibc 2.17'
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+        run: |
+          set -euxo pipefail
+
+          docker pull quay.io/pypa/manylinux2014_x86_64:latest
+
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            -e BUILD_NUMBER \
+            -e BOOT_JDK=/work/bootjdk/jdk \
+            -e NO_SPEECHD=1 \
+            quay.io/pypa/manylinux2014_x86_64:latest \
+            bash -lc '
+              set -euxo pipefail
+
+              git config --global --add safe.directory /work
+
+              yum install -y \
+                alsa-lib-devel \
+                autoconf \
+                cups-devel \
+                curl \
+                dbus-devel \
+                vulkan-devel \
+                wayland-devel \
+                libxkbcommon-devel \
+                file \
+                fontconfig-devel \
+                freetype-devel \
+                libX11-devel \
+                libXext-devel \
+                libXrandr-devel \
+                libXrender-devel \
+                libXt-devel \
+                libXtst-devel \
+                libffi-devel \
+                make \
+                rsync \
+                unzip \
+                which \
+                xz \
+                zip
+
+              WAYLAND_PROTOCOLS_VERSION=1.39
+              WAYLAND_PROTOCOLS_TARBALL="/tmp/wayland-protocols-${WAYLAND_PROTOCOLS_VERSION}.tar.xz"
+              curl --fail --location --retry 5 \
+                --output "$WAYLAND_PROTOCOLS_TARBALL" \
+                "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/${WAYLAND_PROTOCOLS_VERSION}/downloads/wayland-protocols-${WAYLAND_PROTOCOLS_VERSION}.tar.xz"
+              echo "e1dcdcbbf08e2e0a8a02ee5d9a0be3a6aafc39a4b51fa7e0d2f1a16411cb72fa  $WAYLAND_PROTOCOLS_TARBALL" | sha256sum -c -
+              rm -rf /opt/wayland-protocols
+              mkdir -p /opt/wayland-protocols
+              tar -xJf "$WAYLAND_PROTOCOLS_TARBALL" --strip-components=1 -C /opt/wayland-protocols
+              test -f /opt/wayland-protocols/staging/xdg-activation/xdg-activation-v1.xml
+              test -f /opt/wayland-protocols/staging/xdg-toplevel-icon/xdg-toplevel-icon-v1.xml
+              test -f /opt/wayland-protocols/staging/cursor-shape/cursor-shape-v1.xml
+              test -f /opt/wayland-protocols/staging/ext-data-control/ext-data-control-v1.xml
+
+              if [[ -d /opt/rh/devtoolset-10/root/usr/bin ]]; then
+                export PATH=/opt/rh/devtoolset-10/root/usr/bin:$PATH
+              fi
+
+              GLSLANG_VERSION=11.13.0
+              GLSLANG_COMMIT=77551c429f86c0e077f26552b7c1c0f12a9f235e
+              rm -rf /tmp/glslang /tmp/glslang-build
+              git clone --depth 1 --branch "$GLSLANG_VERSION" https://github.com/KhronosGroup/glslang.git /tmp/glslang
+              test "$(git -C /tmp/glslang rev-parse HEAD)" = "$GLSLANG_COMMIT"
+              PYTHON3_CANDIDATE=
+              if [[ -d /opt/python ]]; then
+                while IFS= read -r candidate; do
+                  if [[ -x "$candidate" ]] && "$candidate" -c "import sys; raise SystemExit(sys.version_info[0] != 3)" >/dev/null 2>&1; then
+                    PYTHON3_CANDIDATE="$candidate"
+                    break
+                  fi
+                done < <(find /opt/python -path "*/bin/python*" -print | sort)
+              fi
+              test -n "$PYTHON3_CANDIDATE"
+              "$PYTHON3_CANDIDATE" --version
+
+              cmake -S /tmp/glslang -B /tmp/glslang-build \
+                -DPYTHON_EXECUTABLE="$PYTHON3_CANDIDATE" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DENABLE_OPT=OFF \
+                -DBUILD_TESTING=OFF \
+                -DENABLE_HLSL=OFF \
+                -DINSTALL_GTEST=OFF
+              cmake --build /tmp/glslang-build --target glslangValidator --parallel 2
+              install -m 0755 /tmp/glslang-build/StandAlone/glslangValidator /usr/local/bin/glslangValidator
+              glslangValidator --version
+              printf "%s\n" "#version 450" "layout(local_size_x = 1) in;" "void main() {}" > /tmp/jbr-vulkan-smoke.comp
+              glslangValidator --target-env vulkan1.2 -x -DSTAGE_COMP -o /tmp/jbr-vulkan-smoke.h /tmp/jbr-vulkan-smoke.comp
+              test -s /tmp/jbr-vulkan-smoke.h
+
+              echo "Build libc:"
+              glibc_line="$(ldd --version 2>&1 | sed -n "1p")"
+              echo "$glibc_line"
+              grep -F "2.17" <<< "$glibc_line"
+
+              echo "Compiler:"
+              gcc --version | sed -n "1p"
+
+              echo "Boot JDK:"
+              "$BOOT_JDK/bin/java" -version
+
+              bash jb/project/tools/linux/scripts/mkimages_x64.sh "$BUILD_NUMBER" nomod
+            '
+
+      - name: 'Locate JBR bundles'
+        id: bundles
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+        run: |
+          set -euxo pipefail
+
+          runtime="$(find . -maxdepth 1 -type f -name "jbr-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
+          sdk="$(find . -maxdepth 1 -type f -name "jbrsdk-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
+
+          test -n "$runtime"
+          test -n "$sdk"
+
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+          echo "sdk=$sdk" >> "$GITHUB_OUTPUT"
+
+      - name: 'Audit Linux ABI'
+        env:
+          RUNTIME_TGZ: ${{ steps.bundles.outputs.runtime }}
+          SDK_TGZ: ${{ steps.bundles.outputs.sdk }}
+        run: |
+          set -euo pipefail
+
+          rm -rf centos7-audit
+          mkdir -p centos7-audit/runtime centos7-audit/sdk
+          tar -xzf "$RUNTIME_TGZ" -C centos7-audit/runtime
+          tar -xzf "$SDK_TGZ" -C centos7-audit/sdk
+
+          version_gt() {
+            local candidate="$1"
+            local maximum="$2"
+            [[ "$candidate" == "$maximum" ]] && return 1
+            [[ "$(printf '%s\n%s\n' "$candidate" "$maximum" | sort -V | tail -n 1)" == "$candidate" ]]
+          }
+
+          violations=0
+          elf_count=0
+
+          while IFS= read -r -d '' f; do
+            if ! file -b "$f" | grep -q '^ELF '; then
+              continue
+            fi
+
+            elf_count=$((elf_count + 1))
+
+            while IFS= read -r symbol; do
+              [[ -z "$symbol" ]] && continue
+              version="${symbol#GLIBC_}"
+              if version_gt "$version" "2.17"; then
+                echo "::error file=$f::requires $symbol (CentOS 7 maximum is GLIBC_2.17)"
+                violations=1
+              fi
+            done < <(readelf --version-info "$f" 2>/dev/null | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' | sort -Vu || true)
+
+            while IFS= read -r symbol; do
+              [[ -z "$symbol" ]] && continue
+              version="${symbol#GLIBCXX_}"
+              if version_gt "$version" "3.4.19"; then
+                echo "::error file=$f::requires $symbol (CentOS 7 system libstdc++ maximum is GLIBCXX_3.4.19)"
+                violations=1
+              fi
+            done < <(readelf --version-info "$f" 2>/dev/null | grep -oE 'GLIBCXX_[0-9]+(\.[0-9]+)+' | sort -Vu || true)
+
+            while IFS= read -r symbol; do
+              [[ -z "$symbol" ]] && continue
+              version="${symbol#CXXABI_}"
+              if version_gt "$version" "1.3.7"; then
+                echo "::error file=$f::requires $symbol (CentOS 7 system libstdc++ maximum is CXXABI_1.3.7)"
+                violations=1
+              fi
+            done < <(readelf --version-info "$f" 2>/dev/null | grep -oE 'CXXABI_[0-9]+(\.[0-9]+)+' | sort -Vu || true)
+          done < <(find centos7-audit -type f -print0)
+
+          echo "Audited ELF files: $elf_count"
+          test "$elf_count" -gt 0
+          test "$violations" -eq 0
+
+      - name: 'Smoke test on CentOS 7'
+        env:
+          RUNTIME_TGZ: ${{ steps.bundles.outputs.runtime }}
+        run: |
+          set -euxo pipefail
+
+          rm -rf centos7-smoke
+          mkdir -p centos7-smoke
+          tar -xzf "$RUNTIME_TGZ" -C centos7-smoke
+          runtime_dir="$(find "$PWD/centos7-smoke" -mindepth 1 -maxdepth 1 -type d -name 'jbr-*' -print -quit)"
+          test -n "$runtime_dir"
+
+          docker pull quay.io/centos/centos:7
+
+          docker run --rm quay.io/centos/centos:7 \
+            bash -lc 'glibc_line="$(ldd --version 2>&1 | sed -n "1p")"; echo "$glibc_line"; grep -F "2.17" <<< "$glibc_line"'
+
+          docker run --rm \
+            -v "$runtime_dir:/opt/jbr:ro" \
+            quay.io/centos/centos:7 \
+            /opt/jbr/bin/java -version
+
+          docker run --rm \
+            -v "$runtime_dir:/opt/jbr:ro" \
+            quay.io/centos/centos:7 \
+            /opt/jbr/bin/java -Xshare:on -XX:+AllowEnhancedClassRedefinition -version
+
+      - name: 'Prepare release metadata'
+        id: release
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+          RUNTIME_TGZ: ${{ steps.bundles.outputs.runtime }}
+          SDK_TGZ: ${{ steps.bundles.outputs.sdk }}
+        run: |
+          set -euxo pipefail
+
+          runtime_name="$(basename "$RUNTIME_TGZ")"
+          version="${runtime_name#jbr-}"
+          version="${version%-linux-x64-b${BUILD_NUMBER}.tar.gz}"
+          source_sha="$(git rev-parse HEAD)"
+          tag="centos7-jbr-${version}-b${BUILD_NUMBER}"
+
+          sha256sum "$RUNTIME_TGZ" "$SDK_TGZ" > SHA256SUMS
+
+          cat > release-notes.md <<EOF
+          Custom JetBrains Runtime build for CentOS 7 / glibc 2.17 without JCEF.
+
+          Source repository: ${{ github.repository }}
+          Source ref: main
+          Source SHA: ${source_sha}
+          JBR version: ${version}
+          Custom build number: ${BUILD_NUMBER}
+
+          Validation performed by this workflow:
+          - built in manylinux2014 (CentOS 7 / glibc 2.17 baseline) with GCC 10
+          - JCEF excluded via nomod bundle type
+          - GLIBC <= 2.17
+          - GLIBCXX <= 3.4.19
+          - CXXABI <= 1.3.7
+          - java -version in a CentOS 7 container
+          - CDS + JetBrains enhanced class redefinition startup smoke test
+
+          This is an unofficial custom build and is not supported by JetBrains.
+          EOF
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "title=JBR ${version} for CentOS 7 (b${BUILD_NUMBER})" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - name: 'Create GitHub Release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_TGZ: ${{ steps.bundles.outputs.runtime }}
+          SDK_TGZ: ${{ steps.bundles.outputs.sdk }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TITLE: ${{ steps.release.outputs.title }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+        run: |
+          set -euxo pipefail
+
+          gh release create "$TAG" \
+            "$RUNTIME_TGZ" \
+            "$SDK_TGZ" \
+            SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "$TITLE" \
+            --notes-file release-notes.md \
+            --prerelease
+
+      - name: 'Summary'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          {
+            echo '### CentOS 7 JBR release created'
+            echo
+            echo "- Tag: \`$TAG\`"
+            echo "- Source: \`${{ github.repository }}@main\`"
+            echo "- Source SHA: \`${{ steps.release.outputs.source_sha }}\`"
+            echo '- Release workflow rebuilt and revalidated the binaries independently.'
+          } >> "$GITHUB_STEP_SUMMARY"
