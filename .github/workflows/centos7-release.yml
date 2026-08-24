@@ -32,7 +32,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y binutils file
 
-      - name: 'Build JBR Legacy Binary on glibc 2.17'
+      - name: 'Build JBR without JCEF on glibc 2.17'
         env:
           BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
         run: |
@@ -106,7 +106,7 @@ jobs:
               echo "Boot JDK:"
               "$BOOT_JDK/bin/java" -version
 
-              bash jb/project/tools/linux/scripts/mkimages_x64.sh "$BUILD_NUMBER" lb
+              bash jb/project/tools/linux/scripts/mkimages_x64.sh "$BUILD_NUMBER" nomod
             '
 
       - name: 'Locate JBR bundles'
@@ -116,8 +116,8 @@ jobs:
         run: |
           set -euxo pipefail
 
-          runtime="$(find . -maxdepth 1 -type f -name "jbr_lb-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
-          sdk="$(find . -maxdepth 1 -type f -name "jbrsdk_lb-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
+          runtime="$(find . -maxdepth 1 -type f -name "jbr-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
+          sdk="$(find . -maxdepth 1 -type f -name "jbrsdk-*-linux-x64-b${BUILD_NUMBER}.tar.gz" -print -quit)"
 
           test -n "$runtime"
           test -n "$sdk"
@@ -195,7 +195,7 @@ jobs:
           rm -rf centos7-smoke
           mkdir -p centos7-smoke
           tar -xzf "$RUNTIME_TGZ" -C centos7-smoke
-          runtime_dir="$(find "$PWD/centos7-smoke" -mindepth 1 -maxdepth 1 -type d -name 'jbr_lb-*' -print -quit)"
+          runtime_dir="$(find "$PWD/centos7-smoke" -mindepth 1 -maxdepth 1 -type d -name 'jbr-*' -print -quit)"
           test -n "$runtime_dir"
 
           docker pull quay.io/centos/centos:7
@@ -223,7 +223,7 @@ jobs:
           set -euxo pipefail
 
           runtime_name="$(basename "$RUNTIME_TGZ")"
-          version="${runtime_name#jbr_lb-}"
+          version="${runtime_name#jbr-}"
           version="${version%-linux-x64-b${BUILD_NUMBER}.tar.gz}"
           source_sha="$(git rev-parse HEAD)"
           tag="centos7-jbr-${version}-b${BUILD_NUMBER}"
@@ -231,7 +231,7 @@ jobs:
           sha256sum "$RUNTIME_TGZ" "$SDK_TGZ" > SHA256SUMS
 
           cat > release-notes.md <<EOF
-          Custom JetBrains Runtime build for CentOS 7 / glibc 2.17.
+          Custom JetBrains Runtime build for CentOS 7 / glibc 2.17 without JCEF.
 
           Source repository: ${{ github.repository }}
           Source ref: main
@@ -241,6 +241,7 @@ jobs:
 
           Validation performed by this workflow:
           - built in manylinux2014 (CentOS 7 / glibc 2.17 baseline) with GCC 10
+          - JCEF excluded via nomod bundle type
           - GLIBC <= 2.17
           - GLIBCXX <= 3.4.19
           - CXXABI <= 1.3.7
