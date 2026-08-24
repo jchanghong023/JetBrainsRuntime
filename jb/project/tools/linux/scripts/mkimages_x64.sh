@@ -24,6 +24,7 @@ source jb/project/tools/common/scripts/common.sh
 
 JCEF_PATH=${JCEF_PATH:=./jcef_linux_x64}
 NO_SPEECHD=${NO_SPEECHD:=""}
+VULKAN_HEADERS_INCLUDE=${VULKAN_HEADERS_INCLUDE:=""}
 
 function do_configure {
   if is_musl; then
@@ -45,6 +46,11 @@ function do_configure {
 
   [[ -n "$NO_SPEECHD" ]] || WITH_SPEECHD_INCLUDE=--with-speechd-include=/usr/include/speech-dispatcher
 
+  WITH_VULKAN_HEADERS=
+  if [[ -n "$VULKAN_HEADERS_INCLUDE" ]]; then
+    WITH_VULKAN_HEADERS="--with-extra-cflags=-I${VULKAN_HEADERS_INCLUDE} --with-extra-cxxflags=-I${VULKAN_HEADERS_INCLUDE}"
+  fi
+
   sh configure \
     $WITH_DEBUG_LEVEL \
     --with-vendor-name="$VENDOR_NAME" \
@@ -56,6 +62,7 @@ function do_configure {
     --with-boot-jdk="$BOOT_JDK" \
     --enable-cds=yes \
     $WITH_VULKAN \
+    $WITH_VULKAN_HEADERS \
     $LINUX_TARGET \
     $DISABLE_WARNINGS_AS_ERRORS \
     $STATIC_CONF_ARGS \

@@ -133,7 +133,7 @@ jobs:
               test "$(git -C /tmp/Vulkan-Headers rev-parse HEAD)" = "$VULKAN_HEADERS_COMMIT"
               test -f /tmp/Vulkan-Headers/include/vulkan/vulkan.h
               grep -F "#define VK_HEADER_VERSION 290" /tmp/Vulkan-Headers/include/vulkan/vulkan_core.h
-              export CPPFLAGS="-I/tmp/Vulkan-Headers/include ${CPPFLAGS:-}"
+              export VULKAN_HEADERS_INCLUDE=/tmp/Vulkan-Headers/include
 
               echo "Build libc:"
               glibc_line="$(ldd --version 2>&1 | sed -n "1p")"
