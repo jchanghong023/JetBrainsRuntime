@@ -127,6 +127,15 @@ jobs:
               glslangValidator --target-env vulkan1.2 -x -DSTAGE_COMP -o /tmp/jbr-vulkan-smoke.h /tmp/jbr-vulkan-smoke.comp
               test -s /tmp/jbr-vulkan-smoke.h
 
+              VULKAN_HEADERS_VERSION=1.3.290
+              VULKAN_HEADERS_COMMIT=b379292b2ab6df5771ba9870d53cf8b2c9295daf
+              rm -rf /tmp/Vulkan-Headers
+              git clone --depth 1 --branch "v${VULKAN_HEADERS_VERSION}" https://github.com/KhronosGroup/Vulkan-Headers.git /tmp/Vulkan-Headers
+              test "$(git -C /tmp/Vulkan-Headers rev-parse HEAD)" = "$VULKAN_HEADERS_COMMIT"
+              test -f /tmp/Vulkan-Headers/include/vulkan/vulkan.h
+              grep -F '#define VK_HEADER_VERSION 290' /tmp/Vulkan-Headers/include/vulkan/vulkan_core.h
+              export CPPFLAGS="-I/tmp/Vulkan-Headers/include ${CPPFLAGS:-}"
+
               echo "Build libc:"
               glibc_line="$(ldd --version 2>&1 | sed -n "1p")"
               echo "$glibc_line"
