@@ -1,0 +1,43 @@
+name: 'Probe Current manylinux Python Path'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/_probe-manylinux-python-path.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 'Inspect Python layout'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          docker pull quay.io/pypa/manylinux2014_x86_64:latest
+          result="$(docker run --rm quay.io/pypa/manylinux2014_x86_64:latest bash -lc '
+            set +e
+            echo "PATH=$PATH"
+            echo "python=$(command -v python 2>/dev/null)"
+            python --version 2>&1
+            echo "python3=$(command -v python3 2>/dev/null)"
+            python3 --version 2>&1
+            echo "--- /usr/local/bin python entries ---"
+            find /usr/local/bin -maxdepth 1 -name "python*" -print 2>/dev/null | sort
+            echo "--- /opt python-related entries ---"
+            find /opt -maxdepth 5 \( -name "python*" -o -name "cp3*" \) -print 2>/dev/null | sort | head -n 200
+          ')"
+          printf '%s\n' "$result"
+          payload="$(printf '%s\n' "$result" | base64 -w0)"
+          gh api \
+            --method PUT \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/contents/.github/manylinux-python-path.txt" \
+            -f message='ci: record current manylinux Python path' \
+            -f content="$payload" \
+            -f branch='main'
