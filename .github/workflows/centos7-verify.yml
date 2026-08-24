@@ -132,7 +132,7 @@ jobs:
               git clone --depth 1 --branch "v${VULKAN_HEADERS_VERSION}" https://github.com/KhronosGroup/Vulkan-Headers.git /tmp/Vulkan-Headers
               test "$(git -C /tmp/Vulkan-Headers rev-parse HEAD)" = "$VULKAN_HEADERS_COMMIT"
               test -f /tmp/Vulkan-Headers/include/vulkan/vulkan.h
-              grep -F '#define VK_HEADER_VERSION 290' /tmp/Vulkan-Headers/include/vulkan/vulkan_core.h
+              grep -F "#define VK_HEADER_VERSION 290" /tmp/Vulkan-Headers/include/vulkan/vulkan_core.h
               export CPPFLAGS="-I/tmp/Vulkan-Headers/include ${CPPFLAGS:-}"
 
               echo "Build libc:"
