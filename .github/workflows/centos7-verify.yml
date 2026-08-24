@@ -57,6 +57,7 @@ jobs:
                 cups-devel \
                 curl \
                 dbus-devel \
+                vulkan-devel \
                 wayland-devel \
                 libxkbcommon-devel \
                 file \
