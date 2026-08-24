@@ -108,7 +108,7 @@ jobs:
                     PYTHON3_CANDIDATE="$candidate"
                     break
                   fi
-                done < <(find /opt/python -path "*/bin/python*" -print | sort)
+                done < <(find -L /opt/python -path "*/bin/python*" -print | sort)
               fi
               test -n "$PYTHON3_CANDIDATE"
               "$PYTHON3_CANDIDATE" --version
