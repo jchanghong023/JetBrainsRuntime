@@ -22,7 +22,7 @@ jobs:
           set -euo pipefail
           status="$(gh run list \
             --repo "$GITHUB_REPOSITORY" \
-            --workflow _apply-centos7-shader-compiler.yml \
+            --workflow _apply-centos7-shader-compiler-v2.yml \
             --limit 5 \
             --json databaseId,status,conclusion,headSha,event,createdAt \
             --jq '.')"
@@ -31,6 +31,6 @@ jobs:
             --method PUT \
             -H 'Accept: application/vnd.github+json' \
             "repos/$GITHUB_REPOSITORY/contents/.github/apply-centos7-status.json" \
-            -f message='ci: record shader compiler fix workflow status' \
+            -f message='ci: record v2 shader compiler fix workflow status' \
             -f content="$payload" \
             -f branch='main'
