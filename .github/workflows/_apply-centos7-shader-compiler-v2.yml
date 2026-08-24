@@ -1,4 +1,4 @@
-name: 'Apply CentOS 7 Shader Compiler Fix v2'
+name: 'Generate CentOS 7 Shader Compiler Patch'
 
 on:
   push:
@@ -11,23 +11,27 @@ permissions:
   contents: write
 
 jobs:
-  apply:
+  generate:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
           ref: main
-          fetch-depth: 0
+          fetch-depth: 1
+          sparse-checkout: |
+            .github
 
-      - name: 'Apply patch'
+      - name: 'Generate patched workflow payloads'
         run: |
           set -euxo pipefail
           python3 .github/patch-centos7-shader.py
-          rm .github/patch-centos7-shader.py
-          rm .github/workflows/_apply-centos7-shader-compiler-v2.yml
+          mkdir -p .github/generated
+          cp .github/workflows/centos7-verify.yml .github/generated/centos7-verify.yml.txt
+          cp .github/workflows/centos7-release.yml .github/generated/centos7-release.yml.txt
+          git restore .github/workflows/centos7-verify.yml .github/workflows/centos7-release.yml
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add -A
+          git add .github/generated/centos7-verify.yml.txt .github/generated/centos7-release.yml.txt
           git diff --cached --check
-          git commit -m 'ci: build glslangValidator for CentOS 7 JBR'
+          git commit -m 'ci: generate CentOS 7 workflow patch payloads'
           git push origin HEAD:main
