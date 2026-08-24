@@ -2,9 +2,6 @@ name: 'CentOS 7 Verify'
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
